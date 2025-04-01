@@ -1,0 +1,97 @@
+name: RouterOS Module Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'modules/**'
+      - 'test/**'
+      - '.github/workflows/module_test.yaml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'modules/**'
+      - 'test/**'
+  workflow_dispatch:
+    inputs:
+      test_with_real_router:
+        description: 'Test with real RouterOS device'
+        required: false
+        default: false
+        type: boolean
+
+# Add concurrency group based on environment to prevent multiple simultaneous VPN connections
+concurrency:
+  group: env-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+  
+jobs:
+  validate-modules:
+    name: Validate VLAN Modules
+    runs-on: ubuntu-latest
+    
+    steps:    
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.1'
+        check-latest: true
+    
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: '1.5.7'
+        terraform_wrapper: false
+    
+    - name: Run module syntax and structure tests
+      working-directory: test
+      run: |
+        go test -v -run TestVLANModuleStructure
+        go test -v -run TestVLANModuleSyntax
+
+  # # Optional job for testing with a real RouterOS device
+  # # This will only run if specifically triggered with workflow_dispatch
+  # test-with-real-router:
+  #   name: Test with Real RouterOS
+  #   runs-on: ubuntu-latest
+  #   needs: validate-modules
+  #   container: 
+  #     image: ghcr.io/labrats-work/ops-images/omnibus:main
+  #     options: --cap-add NET_ADMIN --cap-add SYS_MODULE --sysctl net.ipv4.conf.all.src_valid_mark=1
+  #   environment: production  # Use environment with secrets
+    
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+    
+  #   - name: Set up Go
+  #     uses: actions/setup-go@v4
+  #     with:
+  #       go-version: '1.24.1'
+    
+  #   - name: Install Terraform
+  #     uses: hashicorp/setup-terraform@v2
+  #     with:
+  #       terraform_version: '1.5.7'
+  #       terraform_wrapper: false
+    
+  #   - name: Connect to VPN
+  #     uses: labrats-work/actions.terraform/.github/actions/wireguard-vpn@main
+  #     with:
+  #       config: ${{ secrets.WG_PEER_CONFIG }}
+        
+  #   # First run the test to validate the module structure and syntax        
+  #   - name: Run initial module tests
+  #     working-directory: test
+  #     run: |
+  #       go test -v -run TestVLANModulePlan
+  #       go test -v -run TestVLANModuleWithRealRouter
+  #     env:
+  #       USE_REAL_ROUTER: "true"
+  #       ENABLE_APPLY: "true"
+  #       MIKROTIK_HOST: ${{ secrets.MIKROTIK_HOST }}
+  #       MIKROTIK_USER: ${{ secrets.MIKROTIK_USER }}
+  #       MIKROTIK_PASSWORD: ${{ secrets.MIKROTIK_PASSWORD }}
