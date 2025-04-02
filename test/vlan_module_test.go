@@ -14,7 +14,7 @@ import (
 // required files, variables, and outputs.
 func TestVLANModuleStructure(t *testing.T) {
 	// ARRANGE
-	modulePath := "../modules/vlan"
+	modulePath := "../terraform/modules/vlan"
 	requiredFiles := []string{"main.tf", "variables.tf", "outputs.tf"}
 	requiredVars := []string{"vlan_id", "bridge_name", "vlan_cidr", "gateway_ip", "interface_lists", "wan_interface"}
 	requiredOutputs := []string{"vlan_name", "network_cidr", "gateway_ip"}
@@ -57,7 +57,7 @@ func TestVLANModuleStructure(t *testing.T) {
 // TestVLANModuleSyntax validates the Terraform syntax of the VLAN module
 func TestVLANModuleSyntax(t *testing.T) {
 	// ARRANGE
-	modulePath := "../modules/vlan"
+	modulePath := "../../modules/vlan"
 
 	// Skip if module directory doesn't exist
 	if _, err := os.Stat(modulePath); os.IsNotExist(err) {
