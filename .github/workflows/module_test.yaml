@@ -44,4 +44,5 @@ jobs:
     - name: Run module syntax and structure tests
       working-directory: test
       run: |
+        chmod +x exec.sh
         ./exec.sh
