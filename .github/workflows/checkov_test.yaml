@@ -1,0 +1,118 @@
+name: Checkov Security Scan
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '*.tf'
+      - 'terraform/**/*.tf'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  checkov-scan:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Run Checkov scan
+        id: checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform
+          soft_fail: true
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          skip_check: CKV_AWS*,CKV_GIT*,CKV_AZURE*,CKV_GCP*
+          
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v
+        if: success() || failure()
+        with:
+          sarif_file: checkov-results.sarif
+          
+      - name: Create PR Comment with Results
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Get the checkov output as JSON
+            const fs = require('fs');
+            const checkovOutput = process.env.CHECKOV_RESULTS;
+            
+            let failedChecks = [];
+            let passedChecks = 0;
+            let skippedChecks = 0;
+            
+            try {
+              const results = JSON.parse(checkovOutput);
+              
+              // Process results
+              passedChecks = results.summary.passed || 0;
+              skippedChecks = results.summary.skipped || 0;
+              
+              // Extract failed checks
+              if (results.results && results.results.failed_checks) {
+                failedChecks = results.results.failed_checks.map(check => ({
+                  id: check.check_id,
+                  name: check.check_name,
+                  file: check.file_path,
+                  resource: check.resource,
+                  guideline: check.guideline
+                }));
+              }
+            } catch (error) {
+              console.error('Error parsing Checkov results:', error);
+            }
+            
+            // Create the comment body
+            let body = `## Checkov Security Scan Results\n\n`;
+            
+            // Add summary
+            body += `### Summary\n\n`;
+            body += `| Status | Count |\n`;
+            body += `|--------|-------|\n`;
+            body += `| ✅ Passed | ${passedChecks} |\n`;
+            body += `| ❌ Failed | ${failedChecks.length} |\n`;
+            body += `| ⏩ Skipped | ${skippedChecks} |\n\n`;
+            
+            // Add failed checks
+            if (failedChecks.length > 0) {
+              body += `### Failed Checks\n\n`;
+              body += `<details>\n<summary>Click to expand failed checks</summary>\n\n`;
+              
+              body += `| Check ID | Resource | File | Description |\n`;
+              body += `|----------|----------|------|-------------|\n`;
+              
+              failedChecks.forEach(check => {
+                body += `| [${check.id}](${check.guideline || '#'}) | \`${check.resource}\` | ${check.file} | ${check.name} |\n`;
+              });
+              
+              body += `\n</details>\n\n`;
+              
+              body += `⚠️ These issues don't block the PR, but we recommend addressing them before merging.\n`;
+            } else {
+              body += `✅ **No security issues found!**\n`;
+            }
+            
+            body += `\n[View detailed scan results](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            
+            // Post comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        env:
+          CHECKOV_RESULTS: ${{ steps.checkov.outputs.results }}

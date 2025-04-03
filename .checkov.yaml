@@ -1,0 +1,31 @@
+check:
+  # Specify directories to scan
+  - terraform
+  - "*.tf"
+
+# Skip checks that aren't relevant for RouterOS infrastructure
+skip-check:
+  # Skip cloud provider specific checks
+  - CKV_AWS_*     # AWS checks
+  - CKV_AZURE_*   # Azure checks
+  - CKV_GCP_*     # Google Cloud checks
+  - CKV_DOCKER_*  # Docker checks
+  
+  # Exclude specific checks if needed
+  - CKV_TF_1      # Ensure Terraform module sources use a commit hash
+  
+# Custom evaluation
+evaluate:
+  # Evaluate all Terraform modules
+  - terraformModules
+
+# Output formats
+output:
+  - cli
+  - sarif
+
+# Specify where to look for external modules
+external-modules-download:
+  git:
+    do-not-clone-modules:
+      - github.com/labrats-work/awesome.mikrotik
