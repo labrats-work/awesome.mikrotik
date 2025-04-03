@@ -33,7 +33,6 @@ jobs:
           soft_fail: true
           output_format: sarif
           output_file_path: checkov-results.sarif
-          skip_check: CKV_AWS*,CKV_GIT*,CKV_AZURE*,CKV_GCP*
           
       - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@v3
