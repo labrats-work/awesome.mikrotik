@@ -69,8 +69,8 @@ jobs:
       run: |
         if [ -f "test_output.log" ]; then
           # Extract summary information from the test output
-          PASSED=$(grep -c "PASS:" test_output.log || echo "0")
-          FAILED=$(grep -c "FAIL:" test_output.log || echo "0")
+          PASSED=$(grep -c "PASS:" test_output.log || echo 0)
+          FAILED=$(grep -c "FAIL:" test_output.log || echo 0)
           TOTAL=$(($PASSED + $FAILED))
           
           # Extract failure details
