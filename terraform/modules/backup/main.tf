@@ -1,23 +1,3 @@
-# modules/backup/variables.tf
-variable "backup_name" {
-  type        = string
-  description = "Name prefix for backup files"
-  default     = "router-config"
-}
-
-variable "backup_password" {
-  type        = string
-  description = "Password to encrypt backup files"
-  sensitive   = true
-  default     = null
-}
-
-variable "backup_interval" {
-  type        = string
-  description = "Interval for scheduled backups (e.g., '1d 00:00:00')"
-  default     = "1d 00:00:00"
-}
-
 # modules/backup/main.tf
 resource "routeros_system_scheduler" "backup" {
   name       = "daily-backup"
@@ -42,15 +22,4 @@ resource "routeros_system_script" "export_backup" {
     }
   EOT
   comment = "Export the latest backup to FTP server"
-}
-
-# modules/backup/outputs.tf
-output "backup_schedule" {
-  description = "Backup schedule interval"
-  value       = routeros_system_scheduler.backup.interval
-}
-
-output "backup_name_pattern" {
-  description = "Pattern of backup filenames"
-  value       = "${var.backup_name}-MMM-DD-YYYY"
 }

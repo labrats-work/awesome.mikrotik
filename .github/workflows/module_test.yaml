@@ -4,13 +4,13 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'modules/**'
+      - 'terraform/modules/**'
       - 'test/**'
       - '.github/workflows/module_test.yaml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'modules/**'
+      - 'terraform/modules/**'
       - 'test/**'
   workflow_dispatch:
     inputs:
@@ -19,15 +19,10 @@ on:
         required: false
         default: false
         type: boolean
-
-# Add concurrency group based on environment to prevent multiple simultaneous VPN connections
-concurrency:
-  group: env-${{ github.event.inputs.environment }}
-  cancel-in-progress: false
   
 jobs:
   validate-modules:
-    name: Validate VLAN Modules
+    name: Validate RouterOS Modules
     runs-on: ubuntu-latest
     
     steps:    
@@ -47,51 +42,134 @@ jobs:
         terraform_wrapper: false
     
     - name: Run module syntax and structure tests
+      id: run-tests
+      continue-on-error: true
       working-directory: test
       run: |
-        go test -v -run TestVLANModuleStructure
-        go test -v -run TestVLANModuleSyntax
-
-  # # Optional job for testing with a real RouterOS device
-  # # This will only run if specifically triggered with workflow_dispatch
-  # test-with-real-router:
-  #   name: Test with Real RouterOS
-  #   runs-on: ubuntu-latest
-  #   needs: validate-modules
-  #   container: 
-  #     image: ghcr.io/labrats-work/ops-images/omnibus:main
-  #     options: --cap-add NET_ADMIN --cap-add SYS_MODULE --sysctl net.ipv4.conf.all.src_valid_mark=1
-  #   environment: production  # Use environment with secrets
+        chmod +x exec.sh
+        ./exec.sh 2>&1 | tee test_output.log
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "test_result=success" >> $GITHUB_OUTPUT
+        else
+          echo "test_result=failure" >> $GITHUB_OUTPUT
+        fi
     
-  #   steps:
-  #   - name: Checkout code
-  #     uses: actions/checkout@v4
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: test/test_output.log
+        retention-days: 7
     
-  #   - name: Set up Go
-  #     uses: actions/setup-go@v4
-  #     with:
-  #       go-version: '1.24.1'
+    - name: Generate test summary
+      id: summary
+      if: always()
+      working-directory: test
+      run: |
+        if [ -f "test_output.log" ]; then
+          # Count PASS and FAIL occurrences - use explicit 0 if not found
+          if grep -q "PASS:" test_output.log; then
+            PASSED=$(grep -c "PASS:" test_output.log)
+          else
+            PASSED=0
+          fi
+          
+          if grep -q "FAIL:" test_output.log; then
+            FAILED=$(grep -c "FAIL:" test_output.log)
+          else
+            FAILED=0
+          fi
+          
+          # Calculate total - with explicit fallbacks
+          TOTAL=$((PASSED + FAILED))
+          
+          # Debug output
+          echo "PASSED: $PASSED"
+          echo "FAILED: $FAILED"
+          echo "TOTAL: $TOTAL"
+          
+          # Store in outputs
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          
+          # Create a multiline string for failure details
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "failure_details<<$EOF" >> $GITHUB_OUTPUT
+          if grep -q "FAIL:" test_output.log; then
+            grep -A 5 "FAIL:" test_output.log >> $GITHUB_OUTPUT
+          else
+            echo "No specific failures found" >> $GITHUB_OUTPUT
+          fi
+          echo "$EOF" >> $GITHUB_OUTPUT
+        else
+          echo "passed=0" >> $GITHUB_OUTPUT
+          echo "failed=0" >> $GITHUB_OUTPUT
+          echo "total=0" >> $GITHUB_OUTPUT
+          echo "failure_details=No test output found" >> $GITHUB_OUTPUT
+        fi
     
-  #   - name: Install Terraform
-  #     uses: hashicorp/setup-terraform@v2
-  #     with:
-  #       terraform_version: '1.5.7'
-  #       terraform_wrapper: false
+    - name: Comment on PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const testResult = '${{ steps.run-tests.outputs.test_result }}';
+          const summary = {
+            passed: ${{ steps.summary.outputs.passed }},
+            failed: ${{ steps.summary.outputs.failed }},
+            total: ${{ steps.summary.outputs.total }}
+          };
+          
+          let statusIcon = '✅';
+          let statusColor = '22863a';
+          let statusText = 'All tests passed successfully!';
+          
+          if (testResult === 'failure') {
+            statusIcon = '❌';
+            statusColor = 'cb2431';
+            statusText = 'Some tests failed. Please check the details below.';
+          }
+          
+          const failureDetails = `${{ steps.summary.outputs.failure_details }}`;
+          
+          const body = `### RouterOS Module Test Results ${statusIcon}
+          
+          **Status**: ${statusText}
+          
+          | Total Tests | Passed | Failed |
+          |-------------|--------|--------|
+          | ${summary.total} | ${summary.passed} | ${summary.failed} |
+          
+          ${testResult === 'failure' ? `
+          <details>
+          <summary>View Failure Details</summary>
+          
+          \`\`\`
+          ${failureDetails}
+          \`\`\`
+          
+          </details>
+          
+          Please fix the module interface issues before merging this PR.
+          ` : ''}
+          
+          [View full test logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
     
-  #   - name: Connect to VPN
-  #     uses: labrats-work/actions.terraform/.github/actions/wireguard-vpn@main
-  #     with:
-  #       config: ${{ secrets.WG_PEER_CONFIG }}
-        
-  #   # First run the test to validate the module structure and syntax        
-  #   - name: Run initial module tests
-  #     working-directory: test
-  #     run: |
-  #       go test -v -run TestVLANModulePlan
-  #       go test -v -run TestVLANModuleWithRealRouter
-  #     env:
-  #       USE_REAL_ROUTER: "true"
-  #       ENABLE_APPLY: "true"
-  #       MIKROTIK_HOST: ${{ secrets.MIKROTIK_HOST }}
-  #       MIKROTIK_USER: ${{ secrets.MIKROTIK_USER }}
-  #       MIKROTIK_PASSWORD: ${{ secrets.MIKROTIK_PASSWORD }}
+    - name: Check test results
+      if: always()
+      run: |
+        if [ "${{ steps.run-tests.outputs.test_result }}" != "success" ]; then
+          echo "::error::Module tests failed!"
+          exit 1
+        fi
