@@ -78,8 +78,15 @@ func validateVariables(t *testing.T, modulePath string, requiredInputs, optional
 
 			foundVars[varName] = true
 
-			// Check if it has a default value
-			if strings.Contains(varBody, "default") {
+			// Check if it has a default value declaration
+			// This regex pattern handles various default value formats:
+			// 1. Simple defaults (strings, numbers)
+			// 2. Empty arrays and maps: default = [] or default = {}
+			// 3. Multi-line complex defaults with brackets
+			defaultPattern := regexp.MustCompile(`default\s*=\s*(?:(\[\]|\{\})|(\[[\s\S]*?\]|\{[\s\S]*?\})|([^}\n]+))`)
+			defaultMatch := defaultPattern.FindStringSubmatch(varBody)
+
+			if defaultMatch != nil {
 				varsWithDefaults[varName] = true
 			}
 		}
