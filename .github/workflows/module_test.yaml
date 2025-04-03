@@ -22,7 +22,7 @@ on:
   
 jobs:
   validate-modules:
-    name: Validate VLAN Modules
+    name: Validate RouterOS Modules
     runs-on: ubuntu-latest
     
     steps:    
@@ -42,7 +42,117 @@ jobs:
         terraform_wrapper: false
     
     - name: Run module syntax and structure tests
+      id: run-tests
+      continue-on-error: true
       working-directory: test
       run: |
         chmod +x exec.sh
-        ./exec.sh
+        ./exec.sh 2>&1 | tee test_output.log
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "test_result=success" >> $GITHUB_OUTPUT
+        else
+          echo "test_result=failure" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: test/test_output.log
+        retention-days: 7
+    
+    - name: Generate test summary
+      id: summary
+      if: always()
+      working-directory: test
+      run: |
+        if [ -f "test_output.log" ]; then
+          # Extract summary information from the test output
+          PASSED=$(grep -c "PASS:" test_output.log || echo "0")
+          FAILED=$(grep -c "FAIL:" test_output.log || echo "0")
+          TOTAL=$(($PASSED + $FAILED))
+          
+          # Extract failure details
+          FAILURE_DETAILS=$(grep -A 5 "FAIL:" test_output.log || echo "No specific failures found")
+          
+          # Store in outputs
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          
+          # Create a multiline string for failure details
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "failure_details<<$EOF" >> $GITHUB_OUTPUT
+          echo "$FAILURE_DETAILS" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+        else
+          echo "passed=0" >> $GITHUB_OUTPUT
+          echo "failed=0" >> $GITHUB_OUTPUT
+          echo "total=0" >> $GITHUB_OUTPUT
+          echo "failure_details=No test output found" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Comment on PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const testResult = '${{ steps.run-tests.outputs.test_result }}';
+          const summary = {
+            passed: ${{ steps.summary.outputs.passed }},
+            failed: ${{ steps.summary.outputs.failed }},
+            total: ${{ steps.summary.outputs.total }}
+          };
+          
+          let statusIcon = '✅';
+          let statusColor = '22863a';
+          let statusText = 'All tests passed successfully!';
+          
+          if (testResult === 'failure') {
+            statusIcon = '❌';
+            statusColor = 'cb2431';
+            statusText = 'Some tests failed. Please check the details below.';
+          }
+          
+          const failureDetails = `${{ steps.summary.outputs.failure_details }}`;
+          
+          const body = `### RouterOS Module Test Results ${statusIcon}
+          
+          **Status**: ${statusText}
+          
+          | Total Tests | Passed | Failed |
+          |-------------|--------|--------|
+          | ${summary.total} | ${summary.passed} | ${summary.failed} |
+          
+          ${testResult === 'failure' ? `
+          <details>
+          <summary>View Failure Details</summary>
+          
+          \`\`\`
+          ${failureDetails}
+          \`\`\`
+          
+          </details>
+          
+          Please fix the module interface issues before merging this PR.
+          ` : ''}
+          
+          [View full test logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+    
+    - name: Check test results
+      if: always()
+      run: |
+        if [ "${{ steps.run-tests.outputs.test_result }}" != "success" ]; then
+          echo "::error::Module tests failed!"
+          exit 1
+        fi
