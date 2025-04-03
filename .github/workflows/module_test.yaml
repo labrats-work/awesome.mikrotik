@@ -67,15 +67,21 @@ jobs:
       if: always()
       working-directory: test
       run: |
-
         if [ -f "test_output.log" ]; then
-          # Extract summary information from the test output - ensure values default to zero
-          PASSED=$(grep -c "PASS:" test_output.log || echo 0)
-          FAILED=$(grep -c "FAIL:" test_output.log || echo 0)
+          # Count PASS and FAIL occurrences - use explicit 0 if not found
+          if grep -q "PASS:" test_output.log; then
+            PASSED=$(grep -c "PASS:" test_output.log)
+          else
+            PASSED=0
+          fi
           
-          # Ensure values are treated as integers
-          PASSED=$((PASSED + 0))
-          FAILED=$((FAILED + 0))
+          if grep -q "FAIL:" test_output.log; then
+            FAILED=$(grep -c "FAIL:" test_output.log)
+          else
+            FAILED=0
+          fi
+          
+          # Calculate total - with explicit fallbacks
           TOTAL=$((PASSED + FAILED))
           
           # Debug output
