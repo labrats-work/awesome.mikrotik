@@ -6,6 +6,7 @@ on:
     paths:
       - '*.tf'
       - 'terraform/**/*.tf'
+      - '.github/workflows/checkov_test.yaml'
   workflow_dispatch:
 
 permissions:
