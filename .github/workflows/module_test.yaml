@@ -67,17 +67,21 @@ jobs:
       if: always()
       working-directory: test
       run: |
+
         if [ -f "test_output.log" ]; then
-          # Extract summary information from the test output
-          PASSED=$(grep -c "PASS:" test_output.log || echo "0")
-          FAILED=$(grep -c "FAIL:" test_output.log || echo "0")
-          # Ensure we're working with integers
-          PASSED=${PASSED:-0}
-          FAILED=${FAILED:-0}
+          # Extract summary information from the test output - ensure values default to zero
+          PASSED=$(grep -c "PASS:" test_output.log || echo 0)
+          FAILED=$(grep -c "FAIL:" test_output.log || echo 0)
+          
+          # Ensure values are treated as integers
+          PASSED=$((PASSED + 0))
+          FAILED=$((FAILED + 0))
           TOTAL=$((PASSED + FAILED))
           
-          # Extract failure details
-          FAILURE_DETAILS=$(grep -A 5 "FAIL:" test_output.log || echo "No specific failures found")
+          # Debug output
+          echo "PASSED: $PASSED"
+          echo "FAILED: $FAILED"
+          echo "TOTAL: $TOTAL"
           
           # Store in outputs
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
@@ -87,7 +91,11 @@ jobs:
           # Create a multiline string for failure details
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "failure_details<<$EOF" >> $GITHUB_OUTPUT
-          echo "$FAILURE_DETAILS" >> $GITHUB_OUTPUT
+          if grep -q "FAIL:" test_output.log; then
+            grep -A 5 "FAIL:" test_output.log >> $GITHUB_OUTPUT
+          else
+            echo "No specific failures found" >> $GITHUB_OUTPUT
+          fi
           echo "$EOF" >> $GITHUB_OUTPUT
         else
           echo "passed=0" >> $GITHUB_OUTPUT
