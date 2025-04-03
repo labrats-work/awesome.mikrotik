@@ -29,6 +29,7 @@ jobs:
         uses: bridgecrewio/checkov-action@master
         with:
           directory: ./terraform/modules/vlan
+          download_external_modules: true
           framework: terraform
           output_format: sarif
           output_file_path: checkov-results.sarif
